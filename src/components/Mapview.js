@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Linking,
   Platform,
@@ -9,21 +10,13 @@ import {
   View,
 } from "react-native";
 import * as Location from "expo-location";
+import API from "../services/api";
 
-function MapView() {
-  const [instructorLocation] = useState({
-    latitude: 28.6139,
-    longitude: 77.209,
-    label: "Instructor Location",
-  });
-  const [userLocation, setUserLocation] = useState({
-    latitude: 28.6219,
-    longitude: 77.2183,
-    label: "User Location",
-  });
-  const [status, setStatus] = useState(
-    "Showing the default instructor and user locations."
-  );
+function MapView({ profile, bookings = [], onSyncLocation, syncingLocation }) {
+  const [userLocation, setUserLocation] = useState(null);
+  const [status, setStatus] = useState("Preparing your map tools...");
+  const [nearbyCount, setNearbyCount] = useState(0);
+  const [loadingNearby, setLoadingNearby] = useState(false);
 
   useEffect(() => {
     const fetchLiveLocation = async () => {
@@ -31,7 +24,7 @@ function MapView() {
         const { status: permissionStatus } = await Location.requestForegroundPermissionsAsync();
 
         if (permissionStatus !== "granted") {
-          setStatus("Location permission not granted, so default user location is shown.");
+          setStatus("Location permission is off, so your saved teaching location is shown.");
           return;
         }
 
@@ -42,29 +35,67 @@ function MapView() {
         setUserLocation({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
-          label: "User Location",
         });
-        setStatus("Map is ready with your live location.");
+        setStatus("Live location is ready. You can sync it to your instructor profile anytime.");
       } catch {
-        setStatus("Live location is unavailable, so default user location is shown.");
+        setStatus("Live location is unavailable right now, so your saved teaching location is shown.");
       }
     };
 
     fetchLiveLocation();
   }, []);
 
-  const mapUrl = useMemo(() => {
-    const origin = `${instructorLocation.latitude},${instructorLocation.longitude}`;
-    const destination = `${userLocation.latitude},${userLocation.longitude}`;
+  useEffect(() => {
+    const loadNearby = async () => {
+      const source = userLocation || (profile?.latitude && profile?.longitude
+        ? { latitude: profile.latitude, longitude: profile.longitude }
+        : null);
 
-    if (Platform.OS === "ios") {
-      return `http://maps.apple.com/?saddr=${origin}&daddr=${destination}`;
+      if (!source) {
+        return;
+      }
+
+      try {
+        setLoadingNearby(true);
+        const nearby = await API.getNearbyInstructors(source.latitude, source.longitude, 10);
+        setNearbyCount(nearby.length);
+      } catch {
+        setNearbyCount(0);
+      } finally {
+        setLoadingNearby(false);
+      }
+    };
+
+    loadNearby();
+  }, [profile?.latitude, profile?.longitude, userLocation]);
+
+  const destination = useMemo(() => {
+    if (profile?.latitude && profile?.longitude) {
+      return {
+        latitude: profile.latitude,
+        longitude: profile.longitude,
+        label: "Saved Teaching Location",
+      };
     }
 
-    return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}`;
-  }, [instructorLocation, userLocation]);
+    return null;
+  }, [profile?.latitude, profile?.longitude]);
 
   const openMap = async () => {
+    if (!destination) {
+      Alert.alert("Location unavailable", "Sync your instructor location first to open navigation.");
+      return;
+    }
+
+    const origin = userLocation
+      ? `${userLocation.latitude},${userLocation.longitude}`
+      : `${destination.latitude},${destination.longitude}`;
+    const target = `${destination.latitude},${destination.longitude}`;
+
+    const mapUrl = Platform.OS === "ios"
+      ? `http://maps.apple.com/?saddr=${origin}&daddr=${target}`
+      : `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${target}`;
+
     const supported = await Linking.canOpenURL(mapUrl);
     if (!supported) {
       Alert.alert("Unable to open map", "Please install a maps app on this device.");
@@ -74,34 +105,58 @@ function MapView() {
     await Linking.openURL(mapUrl);
   };
 
+  const nextBooking = bookings.find((booking) => booking.status === "accepted" || booking.status === "pending");
+
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Map</Text>
 
       <View style={styles.locationRow}>
         <View style={styles.locationCard}>
-          <Text style={styles.locationTitle}>{instructorLocation.label}</Text>
+          <Text style={styles.locationTitle}>Saved Teaching Location</Text>
           <Text style={styles.locationCoords}>
-            {instructorLocation.latitude.toFixed(4)}, {instructorLocation.longitude.toFixed(4)}
+            {destination
+              ? `${destination.latitude.toFixed(4)}, ${destination.longitude.toFixed(4)}`
+              : "No saved location yet"}
           </Text>
         </View>
         <View style={styles.locationCard}>
-          <Text style={styles.locationTitle}>{userLocation.label}</Text>
+          <Text style={styles.locationTitle}>Live Device Location</Text>
           <Text style={styles.locationCoords}>
-            {userLocation.latitude.toFixed(4)}, {userLocation.longitude.toFixed(4)}
+            {userLocation
+              ? `${userLocation.latitude.toFixed(4)}, ${userLocation.longitude.toFixed(4)}`
+              : "Waiting for device location"}
           </Text>
         </View>
       </View>
 
       <View style={styles.mapCard}>
-        <Text style={styles.mapPlaceholderTitle}>Navigation Route</Text>
+        <Text style={styles.mapPlaceholderTitle}>Navigation Tools</Text>
         <Text style={styles.mapPlaceholderText}>
-          Open the native maps app to view route and start turn-by-turn navigation.
+          Open your maps app to navigate to your saved teaching location or sync your current device position back to Driveora.
         </Text>
 
         <Pressable style={styles.openMapButton} onPress={openMap}>
           <Text style={styles.openMapButtonText}>Open in Maps</Text>
         </Pressable>
+
+        <Pressable style={styles.secondaryButton} onPress={onSyncLocation} disabled={syncingLocation}>
+          {syncingLocation ? (
+            <ActivityIndicator color="#123a72" />
+          ) : (
+            <Text style={styles.secondaryButtonText}>Sync Live Location</Text>
+          )}
+        </Pressable>
+      </View>
+
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>Map Summary</Text>
+        <Text style={styles.summaryText}>
+          Nearby instructors within 10 km: {loadingNearby ? "Loading..." : nearbyCount}
+        </Text>
+        <Text style={styles.summaryText}>
+          Next learner: {nextBooking?.learner?.name || "No active booking"}
+        </Text>
       </View>
 
       <Text style={styles.caption}>{status}</Text>
@@ -170,6 +225,35 @@ const styles = StyleSheet.create({
   openMapButtonText: {
     color: "#ffffff",
     fontWeight: "700",
+  },
+  secondaryButton: {
+    alignSelf: "flex-start",
+    backgroundColor: "#eff6ff",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+  },
+  secondaryButtonText: {
+    color: "#123a72",
+    fontWeight: "700",
+  },
+  summaryCard: {
+    marginTop: 14,
+    backgroundColor: "#ffffff",
+    borderRadius: 14,
+    padding: 16,
+  },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#123a72",
+    marginBottom: 6,
+  },
+  summaryText: {
+    color: "#334155",
+    marginBottom: 4,
   },
   caption: {
     marginTop: 10,

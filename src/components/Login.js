@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -8,31 +9,51 @@ import {
   TextInput,
   View,
 } from "react-native";
+import * as Location from "expo-location";
+import API from "../services/api";
 
-function Login({ onLogin }) {
+const DEFAULT_COORDS = {
+  latitude: 28.6139,
+  longitude: 77.209,
+};
+
+function Login({ onLoginSuccess }) {
   const [isCreateMode, setIsCreateMode] = useState(false);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [gender, setGender] = useState("male");
+  const [vehicleType, setVehicleType] = useState("manual");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
       setError("Please enter both email and password.");
       setSuccess("");
       return;
     }
 
-    setError("");
-    setSuccess("");
-    onLogin(email.trim());
+    try {
+      setLoading(true);
+      setError("");
+      setSuccess("");
+      const response = await API.loginInstructor(email.trim(), password.trim());
+      await onLoginSuccess(response);
+    } catch (apiError) {
+      setError(apiError.message || "Unable to login.");
+      setSuccess("");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleCreateAccount = () => {
-    if (!fullName.trim() || !email.trim() || !password.trim() || !confirmPassword.trim()) {
-      setError("Please fill all fields to create your account.");
+  const handleCreateAccount = async () => {
+    if (!fullName.trim() || !email.trim() || !phone.trim() || !password.trim() || !confirmPassword.trim()) {
+      setError("Please fill all required fields to create your account.");
       setSuccess("");
       return;
     }
@@ -43,11 +64,43 @@ function Login({ onLogin }) {
       return;
     }
 
-    setError("");
-    setSuccess("Account created. You can now login with your new credentials.");
-    setIsCreateMode(false);
-    setPassword("");
-    setConfirmPassword("");
+    try {
+      setLoading(true);
+      setError("");
+      setSuccess("");
+
+      let locationPayload = DEFAULT_COORDS;
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status === "granted") {
+        const position = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        locationPayload = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        };
+      }
+
+      const response = await API.registerInstructor({
+        name: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        password: password.trim(),
+        gender,
+        vehicleType,
+        latitude: locationPayload.latitude,
+        longitude: locationPayload.longitude,
+        rating: 4.8,
+      });
+
+      setSuccess("Account created successfully. Loading your instructor dashboard...");
+      await onLoginSuccess(response);
+    } catch (apiError) {
+      setError(apiError.message || "Unable to create instructor account.");
+      setSuccess("");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const switchMode = () => {
@@ -68,20 +121,63 @@ function Login({ onLogin }) {
         </Text>
         <Text style={styles.subtitle}>
           {isCreateMode
-            ? "Set up a new instructor account to start using the app."
-            : "Sign in to access your bookings and lessons."}
+            ? "Create a live instructor profile connected to bookings, maps, and student requests."
+            : "Sign in to manage your real bookings, location, and teaching profile."}
         </Text>
 
         {isCreateMode ? (
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Full Name</Text>
-            <TextInput
-              value={fullName}
-              onChangeText={setFullName}
-              placeholder="Enter your name"
-              style={styles.input}
-            />
-          </View>
+          <>
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Full Name</Text>
+              <TextInput
+                value={fullName}
+                onChangeText={setFullName}
+                placeholder="Enter your name"
+                style={styles.input}
+              />
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Phone</Text>
+              <TextInput
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="Enter phone number"
+                keyboardType="phone-pad"
+                style={styles.input}
+              />
+            </View>
+
+            <Text style={styles.label}>Gender</Text>
+            <View style={styles.optionRow}>
+              {['male', 'female', 'other'].map((option) => (
+                <Pressable
+                  key={option}
+                  style={gender === option ? styles.optionActive : styles.option}
+                  onPress={() => setGender(option)}
+                >
+                  <Text style={gender === option ? styles.optionTextActive : styles.optionText}>
+                    {option}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={styles.label}>Vehicle Type</Text>
+            <View style={[styles.optionRow, { marginBottom: 12 }] }>
+              {['manual', 'automatic'].map((option) => (
+                <Pressable
+                  key={option}
+                  style={vehicleType === option ? styles.optionActive : styles.option}
+                  onPress={() => setVehicleType(option)}
+                >
+                  <Text style={vehicleType === option ? styles.optionTextActive : styles.optionText}>
+                    {option}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
         ) : null}
 
         <View style={styles.fieldGroup}>
@@ -124,10 +220,15 @@ function Login({ onLogin }) {
         {success ? <Text style={styles.successText}>{success}</Text> : null}
 
         <Pressable
-          style={styles.loginButton}
+          style={[styles.loginButton, loading && styles.buttonDisabled]}
           onPress={isCreateMode ? handleCreateAccount : handleLogin}
+          disabled={loading}
         >
-          <Text style={styles.loginButtonText}>{isCreateMode ? "Create Account" : "Login"}</Text>
+          {loading ? (
+            <ActivityIndicator color="#ffffff" />
+          ) : (
+            <Text style={styles.loginButtonText}>{isCreateMode ? "Create Account" : "Login"}</Text>
+          )}
         </Pressable>
 
         <Pressable style={styles.switchModeButton} onPress={switchMode}>
@@ -191,6 +292,38 @@ const styles = StyleSheet.create({
     backgroundColor: "#f8fbff",
     color: "#0f172a",
   },
+  optionRow: {
+    flexDirection: "row",
+    gap: 10,
+    flexWrap: "wrap",
+    marginBottom: 12,
+  },
+  option: {
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    borderRadius: 10,
+    backgroundColor: "#eff6ff",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  optionActive: {
+    borderWidth: 1,
+    borderColor: "#2563eb",
+    borderRadius: 10,
+    backgroundColor: "#2563eb",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  optionText: {
+    color: "#123a72",
+    fontWeight: "600",
+    textTransform: "capitalize",
+  },
+  optionTextActive: {
+    color: "#ffffff",
+    fontWeight: "700",
+    textTransform: "capitalize",
+  },
   errorText: {
     color: "#dc2626",
     marginBottom: 10,
@@ -207,6 +340,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: "center",
     marginTop: 4,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
   loginButtonText: {
     color: "#ffffff",

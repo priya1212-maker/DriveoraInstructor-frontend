@@ -1,14 +1,37 @@
-import { useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
 const availabilityOptions = ["Weekdays", "Weekends", "All Days"];
 const languageOptions = ["English", "Hindi", "Tamil"];
 
-function Settings({ onLogout }) {
+function Settings({
+  onLogout,
+  profile,
+  onSyncLocation,
+  syncingLocation,
+  onSaveSettings,
+  savingSettings,
+}) {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [darkModeEnabled, setDarkModeEnabled] = useState(false);
   const [availability, setAvailability] = useState("Weekdays");
   const [language, setLanguage] = useState("English");
+
+  useEffect(() => {
+    setNotificationsEnabled(profile?.notificationsEnabled ?? true);
+    setDarkModeEnabled(profile?.darkModeEnabled ?? false);
+    setAvailability(profile?.availability || "Weekdays");
+    setLanguage(profile?.language || "English");
+  }, [profile]);
+
+  const handleSave = async () => {
+    await onSaveSettings({
+      notificationsEnabled,
+      darkModeEnabled,
+      availability,
+      language,
+    });
+  };
 
   return (
     <View style={styles.container}>
@@ -33,7 +56,7 @@ function Settings({ onLogout }) {
         <View style={styles.row}>
           <View style={styles.rowText}>
             <Text style={styles.label}>Dark mode</Text>
-            <Text style={styles.help}>Switch between light and dark display styles.</Text>
+            <Text style={styles.help}>Store your preferred display mode for future app sessions.</Text>
           </View>
           <Pressable
             style={darkModeEnabled ? styles.toggleOn : styles.toggleOff}
@@ -42,6 +65,20 @@ function Settings({ onLogout }) {
             <Text style={darkModeEnabled ? styles.toggleOnText : styles.toggleOffText}>
               {darkModeEnabled ? "On" : "Off"}
             </Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.rowText}>
+            <Text style={styles.label}>Location sync</Text>
+            <Text style={styles.help}>Update your saved teaching point from your current device position.</Text>
+          </View>
+          <Pressable
+            style={styles.toggleOn}
+            onPress={onSyncLocation}
+            disabled={syncingLocation}
+          >
+            <Text style={styles.toggleOnText}>{syncingLocation ? "Syncing" : "Sync"}</Text>
           </Pressable>
         </View>
 
@@ -79,8 +116,26 @@ function Settings({ onLogout }) {
           </View>
         </View>
 
-        <Pressable style={styles.saveButton} onPress={() => Alert.alert("Saved", "Settings saved successfully.")}>
-          <Text style={styles.saveButtonText}>Save Settings</Text>
+        <View style={styles.field}>
+          <Text style={styles.label}>Instructor Id</Text>
+          <Text style={styles.help}>{profile?.id || "Not available"}</Text>
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.label}>Current Rating</Text>
+          <Text style={styles.help}>{profile?.rating ?? "Not available"}</Text>
+        </View>
+
+        <Pressable style={styles.saveButton} onPress={handleSave} disabled={savingSettings}>
+          {savingSettings ? (
+            <ActivityIndicator color="#ffffff" />
+          ) : (
+            <Text style={styles.saveButtonText}>Save Settings</Text>
+          )}
+        </Pressable>
+
+        <Pressable style={styles.connectionButton} onPress={() => Alert.alert("Connected", "Your instructor app is connected to the live Driveora backend.")}>
+          <Text style={styles.connectionButtonText}>Check Connection</Text>
         </Pressable>
 
         <Pressable style={styles.logoutButton} onPress={onLogout}>
@@ -194,6 +249,20 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     color: "#ffffff",
+    fontWeight: "700",
+  },
+  connectionButton: {
+    marginTop: 10,
+    backgroundColor: "#eff6ff",
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+  },
+  connectionButtonText: {
+    color: "#123a72",
     fontWeight: "700",
   },
   logoutButton: {

@@ -1,6 +1,13 @@
 import { StyleSheet, Text, View } from "react-native";
 
-function Profile() {
+function Profile({ user, profile }) {
+  const initials = (profile?.name || user?.name || "DI")
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Profile</Text>
@@ -8,38 +15,40 @@ function Profile() {
       <View style={styles.card}>
         <View style={styles.profileTop}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>AS</Text>
+            <Text style={styles.avatarText}>{initials}</Text>
           </View>
 
           <View>
-            <Text style={styles.name}>Amit Sharma</Text>
-            <Text style={styles.role}>Senior Driving Instructor</Text>
+            <Text style={styles.name}>{profile?.name || user?.name || "Instructor"}</Text>
+            <Text style={styles.role}>Driving Instructor</Text>
           </View>
         </View>
 
         <Text style={styles.detail}>
-          <Text style={styles.label}>Name: </Text>
-          Amit Sharma
+          <Text style={styles.label}>Email: </Text>
+          {user?.email || "Not available"}
+        </Text>
+        <Text style={styles.detail}>
+          <Text style={styles.label}>Phone: </Text>
+          {profile?.phone || user?.phone || "Not available"}
         </Text>
         <Text style={styles.detail}>
           <Text style={styles.label}>Vehicle: </Text>
-          Car
-        </Text>
-        <Text style={styles.detail}>
-          <Text style={styles.label}>Experience: </Text>
-          5 years
-        </Text>
-        <Text style={styles.detail}>
-          <Text style={styles.label}>Age: </Text>
-          45
+          {profile?.vehicleType || "Not available"}
         </Text>
         <Text style={styles.detail}>
           <Text style={styles.label}>Gender: </Text>
-          Male
+          {profile?.gender || "Not available"}
         </Text>
         <Text style={styles.detail}>
-          <Text style={styles.label}>Charge: </Text>
-          300 per hour
+          <Text style={styles.label}>Rating: </Text>
+          {profile?.rating ?? "Not available"}
+        </Text>
+        <Text style={styles.detail}>
+          <Text style={styles.label}>Saved Location: </Text>
+          {profile?.latitude && profile?.longitude
+            ? `${profile.latitude.toFixed(4)}, ${profile.longitude.toFixed(4)}`
+            : "Not available"}
         </Text>
       </View>
     </View>
@@ -101,6 +110,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#334155",
     marginBottom: 8,
+    textTransform: "capitalize",
   },
   label: {
     fontWeight: "700",

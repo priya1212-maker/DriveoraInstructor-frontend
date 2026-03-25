@@ -1,39 +1,8 @@
 import { StyleSheet, Text, View } from "react-native";
 
-function Feedback() {
-  const feedbackItems = [
-    {
-      id: 1,
-      user: "Rahul Sharma",
-      rating: 5,
-      lesson: "City Driving",
-      date: "23 Mar 2026",
-      comment:
-        "Very patient and clear with instructions. Parking practice helped me a lot.",
-    },
-    {
-      id: 2,
-      user: "Priya Verma",
-      rating: 4,
-      lesson: "Highway Basics",
-      date: "22 Mar 2026",
-      comment:
-        "Explained lane discipline really well and made the session comfortable.",
-    },
-    {
-      id: 3,
-      user: "Arjun Mehta",
-      rating: 5,
-      lesson: "Night Driving",
-      date: "20 Mar 2026",
-      comment:
-        "Calm guidance and practical tips. I feel much more confident driving at night now.",
-    },
-  ];
-
-  const averageRating = (
-    feedbackItems.reduce((total, item) => total + item.rating, 0) / feedbackItems.length
-  ).toFixed(1);
+function Feedback({ bookings = [], profile, reviews = [] }) {
+  const completedLessons = bookings.filter((booking) => booking.status === "completed");
+  const averageRating = profile?.rating ? Number(profile.rating).toFixed(1) : "0.0";
 
   return (
     <View style={styles.container}>
@@ -45,29 +14,34 @@ function Feedback() {
           <Text style={styles.summaryValue}>{averageRating} / 5</Text>
         </View>
         <View>
-          <Text style={styles.summaryLabel}>Total reviews</Text>
-          <Text style={styles.summaryValue}>{feedbackItems.length}</Text>
+          <Text style={styles.summaryLabel}>Completed lessons</Text>
+          <Text style={styles.summaryValue}>{completedLessons.length}</Text>
         </View>
       </View>
 
-      <View style={styles.list}>
-        {feedbackItems.map((item) => (
+      {reviews.length === 0 ? (
+        <View style={styles.card}>
+          <Text style={styles.user}>No reviews yet</Text>
+          <Text style={styles.comment}>
+            Learner reviews will appear here after completed lessons are rated in the student app.
+          </Text>
+        </View>
+      ) : (
+        reviews.map((item) => (
           <View key={item.id} style={styles.card}>
             <View style={styles.cardTop}>
               <View style={styles.cardMeta}>
-                <Text style={styles.user}>{item.user}</Text>
-                <Text style={styles.meta}>
-                  {item.lesson} | {item.date}
-                </Text>
+                <Text style={styles.user}>Learner #{item.userId}</Text>
+                <Text style={styles.meta}>Booking #{item.bookingId}</Text>
               </View>
               <View style={styles.ratingBadge}>
-                <Text style={styles.ratingText}>{item.rating} Star</Text>
+                <Text style={styles.ratingText}>{item.rating} / 5</Text>
               </View>
             </View>
-            <Text style={styles.comment}>{item.comment}</Text>
+            <Text style={styles.comment}>{item.comment || "No written comment provided."}</Text>
           </View>
-        ))}
-      </View>
+        ))
+      )}
     </View>
   );
 }
@@ -103,15 +77,13 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#123a72",
   },
-  list: {
-    gap: 12,
-  },
   card: {
     backgroundColor: "#ffffff",
     borderRadius: 12,
     padding: 16,
     borderTopWidth: 4,
     borderTopColor: "#60a5fa",
+    marginBottom: 12,
   },
   cardTop: {
     flexDirection: "row",

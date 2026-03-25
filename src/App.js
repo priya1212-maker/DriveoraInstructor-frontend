@@ -1,13 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
   SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   View,
-  Pressable,
 } from "react-native";
+import * as Location from "expo-location";
 import Dashboard from "./components/Dashboard";
 import Bookings from "./components/Bookings";
 import Profile from "./components/Profile";
@@ -16,44 +19,178 @@ import Feedback from "./components/Feedback";
 import Settings from "./components/Settings";
 import Navbar from "./components/Navbar";
 import Login from "./components/Login";
+import API from "./services/api";
 
 function App() {
   const [page, setPage] = useState("dashboard");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [instructorEmail, setInstructorEmail] = useState("");
+  const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [bookings, setBookings] = useState([]);
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [syncingLocation, setSyncingLocation] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+
   const tabs = [
-    { key: "dashboard", label: "Home", icon: "🏠" },
-    { key: "bookings", label: "Bookings", icon: "📅" },
-    { key: "profile", label: "Profile", icon: "👤" },
-    { key: "feedback", label: "Feedback", icon: "⭐" },
-    { key: "settings", label: "Settings", icon: "⚙️" },
+    { key: "dashboard", label: "Home", icon: "Home" },
+    { key: "bookings", label: "Bookings", icon: "Bookings" },
+    { key: "profile", label: "Profile", icon: "Profile" },
+    { key: "feedback", label: "Feedback", icon: "Feedback" },
+    { key: "settings", label: "Settings", icon: "Settings" },
   ];
 
-  const handleLogin = (email) => {
-    setInstructorEmail(email);
-    setIsAuthenticated(true);
+  const refreshInstructorData = async (userId) => {
+    setLoading(true);
+    try {
+      const response = await API.getInstructorBookings(userId);
+      setProfile(response.instructor);
+      setBookings(response.bookings);
+      setReviews(response.reviews || []);
+    } catch (error) {
+      Alert.alert("Sync failed", error.message || "Unable to load instructor data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLoginSuccess = async (response) => {
+    setSession(response.user);
+    setProfile(response.instructorProfile || null);
     setPage("dashboard");
+    await refreshInstructorData(response.user.id);
   };
 
   const handleLogout = () => {
-    setIsAuthenticated(false);
-    setInstructorEmail("");
+    setSession(null);
+    setProfile(null);
+    setBookings([]);
+    setReviews([]);
+    setPage("dashboard");
   };
 
-  const activePage = useMemo(() => {
-    if (page === "bookings") return <Bookings />;
-    if (page === "profile") return <Profile />;
-    if (page === "map") return <MapView />;
-    if (page === "feedback") return <Feedback />;
-    if (page === "settings") return <Settings onLogout={handleLogout} />;
-    return <Dashboard />;
-  }, [page]);
+  const handleStatusChange = async (bookingId, status) => {
+    try {
+      await API.updateBookingStatus(bookingId, status);
+      setBookings((currentBookings) =>
+        currentBookings.map((booking) =>
+          booking.id === bookingId ? { ...booking, status } : booking,
+        ),
+      );
+    } catch (error) {
+      Alert.alert("Update failed", error.message || "Unable to update booking status.");
+    }
+  };
 
-  if (!isAuthenticated) {
+  const handleLocationSync = async () => {
+    if (!session?.id) {
+      return;
+    }
+
+    try {
+      setSyncingLocation(true);
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== "granted") {
+        Alert.alert("Location needed", "Please allow location access to sync your live map position.");
+        return;
+      }
+
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      const updatedProfile = await API.updateInstructorLocation(
+        session.id,
+        currentLocation.coords.latitude,
+        currentLocation.coords.longitude,
+      );
+
+      setProfile(updatedProfile);
+      Alert.alert("Location synced", "Your teaching location has been updated.");
+    } catch (error) {
+      Alert.alert("Sync failed", error.message || "Unable to update location.");
+    } finally {
+      setSyncingLocation(false);
+    }
+  };
+
+  const handleSaveSettings = async (settingsPayload) => {
+    if (!session?.id) {
+      return;
+    }
+
+    try {
+      setSavingSettings(true);
+      const updatedProfile = await API.updateInstructorSettings(session.id, settingsPayload);
+      setProfile(updatedProfile);
+      Alert.alert("Saved", "Your instructor settings have been updated.");
+    } catch (error) {
+      Alert.alert("Save failed", error.message || "Unable to save settings.");
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!session?.id) {
+      return;
+    }
+
+    refreshInstructorData(session.id);
+  }, [session?.id]);
+
+  const activePage = useMemo(() => {
+    if (page === "bookings") {
+      return (
+        <Bookings
+          bookings={bookings}
+          loading={loading}
+          onRefresh={() => refreshInstructorData(session.id)}
+          onStatusChange={handleStatusChange}
+        />
+      );
+    }
+
+    if (page === "profile") {
+      return <Profile user={session} profile={profile} />;
+    }
+
+    if (page === "map") {
+      return (
+        <MapView
+          user={session}
+          profile={profile}
+          bookings={bookings}
+          onSyncLocation={handleLocationSync}
+          syncingLocation={syncingLocation}
+        />
+      );
+    }
+
+    if (page === "feedback") {
+      return <Feedback bookings={bookings} profile={profile} reviews={reviews} />;
+    }
+
+    if (page === "settings") {
+      return (
+        <Settings
+          onLogout={handleLogout}
+          profile={profile}
+          onSyncLocation={handleLocationSync}
+          syncingLocation={syncingLocation}
+          onSaveSettings={handleSaveSettings}
+          savingSettings={savingSettings}
+        />
+      );
+    }
+
+    return <Dashboard bookings={bookings} profile={profile} loading={loading} />;
+  }, [bookings, loading, page, profile, reviews, savingSettings, session, syncingLocation]);
+
+  if (!session) {
     return (
       <SafeAreaView style={styles.page}>
         <StatusBar barStyle="dark-content" />
-        <Login onLogin={handleLogin} />
+        <Login onLoginSuccess={handleLoginSuccess} />
       </SafeAreaView>
     );
   }
@@ -67,7 +204,9 @@ function App() {
         <View style={styles.headerRow}>
           <View style={styles.titleBlock}>
             <Text style={styles.appTitle}>Driveora Instructor</Text>
-            <Text style={styles.loggedInText}>Logged in as {instructorEmail}</Text>
+            <Text style={styles.loggedInText}>
+              {session.name} � {session.email}
+            </Text>
           </View>
           <View style={styles.headerActions}>
             <Pressable style={styles.mapButton} onPress={() => setPage("map")}>
@@ -77,7 +216,13 @@ function App() {
         </View>
 
         <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-          {activePage}
+          {loading && page === "dashboard" ? (
+            <View style={styles.loaderWrap}>
+              <ActivityIndicator size="large" color="#2563eb" />
+            </View>
+          ) : (
+            activePage
+          )}
         </ScrollView>
 
         <View style={styles.nav}>
@@ -162,6 +307,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingBottom: 22,
   },
+  loaderWrap: {
+    paddingVertical: 40,
+  },
   nav: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -173,7 +321,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#f2f8ff",
   },
   navButton: {
-    width: 64,
+    width: 70,
     borderRadius: 12,
     paddingVertical: 8,
     alignItems: "center",
@@ -184,11 +332,15 @@ const styles = StyleSheet.create({
     backgroundColor: "#e3efff",
   },
   navIcon: {
-    fontSize: 16,
+    fontSize: 12,
     opacity: 0.7,
+    color: "#5b7aa6",
+    fontWeight: "600",
   },
   navIconActive: {
-    fontSize: 16,
+    fontSize: 12,
+    color: "#2563eb",
+    fontWeight: "700",
   },
   navText: {
     color: "#5b7aa6",
